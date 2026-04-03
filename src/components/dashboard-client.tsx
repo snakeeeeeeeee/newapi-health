@@ -14,6 +14,16 @@ import type {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+function getDashboardApiPath(): string {
+  const basePath = process.env.NEXT_PUBLIC_BASE_PATH?.trim();
+  if (!basePath) {
+    return "/api/dashboard";
+  }
+
+  const normalized = basePath.startsWith("/") ? basePath : `/${basePath}`;
+  return `${normalized.replace(/\/$/, "")}/api/dashboard`;
+}
+
 function ProviderIcon({ providerId, size = 18 }: { providerId: string; size?: number }) {
   const id = providerId.toLowerCase();
   if (id.includes("openai")) return <OpenAI size={size} />;
@@ -327,7 +337,7 @@ export function DashboardClient() {
 
   async function load() {
     try {
-      const response = await fetch("/api/dashboard", { cache: "no-store" });
+      const response = await fetch(getDashboardApiPath(), { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       setData((await response.json()) as HealthApiResponse);
       setError(null);
