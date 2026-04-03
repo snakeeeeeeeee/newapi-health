@@ -93,7 +93,7 @@ function TimelineBar({ check }: { check: DashboardCheck }) {
         <span>History ({Math.min(points.length, SLOTS)}pts)</span>
       </div>
       <div className="relative h-7 w-full rounded-sm bg-[color:var(--muted)]/20">
-        <div className="flex h-full w-full flex-row-reverse gap-[2px] p-[2px]">
+        <div className="flex h-full w-full gap-[2px] p-[2px]">
           {slots.map((point, i) =>
             point ? (
               <div
