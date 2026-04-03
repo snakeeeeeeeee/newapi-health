@@ -34,6 +34,7 @@ pnpm install
 ### 3. 配置检测目标
 
 ```bash
+cp .env.example .env.local
 cp config/checks.example.json config/checks.json
 ```
 
@@ -141,7 +142,7 @@ pnpm start
 
 ## 环境变量
 
-在项目根目录创建 `.env.local` 可覆盖以下默认值：
+项目已提供 `.env.example`，复制为 `.env.local` 后可覆盖以下默认值：
 
 ```bash
 # 检测轮询间隔（毫秒）
