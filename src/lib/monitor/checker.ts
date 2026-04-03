@@ -13,13 +13,7 @@ type RequestProtocol =
 
 function buildUrl(config: MonitorConfig): string {
   const endpoint = config.endpoint.replace("{model}", encodeURIComponent(config.model));
-  const url = new URL(`${config.baseUrl}${endpoint}`);
-
-  if (detectProtocol(config) === "gemini-generate-content") {
-    url.searchParams.set("key", config.apiKey);
-  }
-
-  return url.toString();
+  return new URL(`${config.baseUrl}${endpoint}`).toString();
 }
 
 function detectProtocol(config: MonitorConfig): RequestProtocol {
@@ -59,6 +53,7 @@ function buildHeaders(
   if (protocol === "gemini-generate-content") {
     return {
       "Content-Type": "application/json",
+      "x-goog-api-key": config.apiKey,
     };
   }
 
@@ -188,6 +183,30 @@ function getResponseText(body: unknown, protocol: RequestProtocol): string {
   return "";
 }
 
+function isGeminiResponseValid(body: unknown): boolean {
+  if (!body || typeof body !== "object") {
+    return false;
+  }
+
+  const payload = body as Record<string, unknown>;
+  if (!Array.isArray(payload.candidates) || payload.candidates.length === 0) {
+    return false;
+  }
+
+  const candidate = payload.candidates[0];
+  if (!candidate || typeof candidate !== "object") {
+    return false;
+  }
+
+  const content = (candidate as Record<string, unknown>).content;
+  if (!content || typeof content !== "object") {
+    return false;
+  }
+
+  const parts = (content as Record<string, unknown>).parts;
+  return Array.isArray(parts) && parts.length > 0;
+}
+
 function getStatusLabel(status: MonitorStatus): string {
   if (status === "healthy") {
     return "Healthy";
@@ -256,7 +275,10 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
 
     const json = (await response.json()) as unknown;
     const text = getResponseText(json, protocol).toLowerCase();
-    if (!text.includes(HEALTHY_TOKEN)) {
+    const isValidGemini = protocol === "gemini-generate-content" && isGeminiResponseValid(json);
+    const passedValidation = isValidGemini || text.includes(HEALTHY_TOKEN);
+
+    if (!passedValidation) {
       return {
         id: config.id,
         status: "failed",
