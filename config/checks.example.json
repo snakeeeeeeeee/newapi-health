@@ -1,0 +1,70 @@
+{
+  "providers": [
+    {
+      "id": "openai",
+      "name": "OpenAI",
+      "groups": [
+        {
+          "id": "default-openai",
+          "name": "default-openai",
+          "models": [
+            {
+              "id": "openai-primary",
+              "name": "OpenAI Primary",
+              "baseUrl": "https://api.openai.com",
+              "apiKey": "sk-replace-me",
+              "endpoint": "/v1/chat/completions",
+              "model": "gpt-4o-mini",
+              "description": "OpenAI 官方接口示例。",
+              "enabled": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "claude",
+      "name": "Anthropic",
+      "groups": [
+        {
+          "id": "claude-max",
+          "name": "claude-max",
+          "models": [
+            {
+              "id": "claude-haiku-4-5",
+              "name": "claude-haiku-4-5",
+              "model": "claude-haiku-4-5",
+              "baseUrl": "https://your-proxy.example.com",
+              "apiKey": "sk-replace-me",
+              "endpoint": "/v1/messages",
+              "description": "Anthropic Messages API 示例。",
+              "enabled": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gemini",
+      "name": "Google",
+      "groups": [
+        {
+          "id": "gemini-flash",
+          "name": "gemini-flash",
+          "models": [
+            {
+              "id": "gemini-primary",
+              "name": "Gemini Flash",
+              "baseUrl": "https://your-proxy.example.com",
+              "apiKey": "sk-replace-me",
+              "endpoint": "/v1beta/models/{model}:generateContent",
+              "model": "gemini-2.0-flash",
+              "description": "Google Gemini API 示例。",
+              "enabled": true
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
