@@ -5,6 +5,14 @@ const DEGRADED_THRESHOLD_MS = Number(process.env.DEGRADED_THRESHOLD_MS ?? "4000"
 const HEALTHY_TOKEN = "ok";
 const ANTHROPIC_VERSION = "2023-06-01";
 
+const CLI_HEADERS: Record<string, string> = {
+  "User-Agent": "claude-cli/2.1.92 (external, cli)",
+  "x-app": "cli",
+  "anthropic-beta":
+    "claude-code-20250219,context-1m-2025-08-07,interleaved-thinking-2025-05-14,redact-thinking-2026-02-12,context-management-2025-06-27,prompt-caching-scope-2026-01-05,effort-2025-11-24",
+  "anthropic-dangerous-direct-browser-access": "true",
+};
+
 type RequestProtocol =
   | "openai-chat"
   | "openai-responses"
@@ -13,7 +21,13 @@ type RequestProtocol =
 
 function buildUrl(config: MonitorConfig): string {
   const endpoint = config.endpoint.replace("{model}", encodeURIComponent(config.model));
-  return new URL(`${config.baseUrl}${endpoint}`).toString();
+  const url = new URL(`${config.baseUrl}${endpoint}`);
+
+  if (config.cliMode && detectProtocol(config) === "anthropic-messages") {
+    url.searchParams.set("beta", "true");
+  }
+
+  return url.toString();
 }
 
 function detectProtocol(config: MonitorConfig): RequestProtocol {
@@ -43,6 +57,16 @@ function buildHeaders(
   protocol: RequestProtocol
 ): Record<string, string> {
   if (protocol === "anthropic-messages") {
+    if (config.cliMode) {
+      return {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+        "anthropic-version": ANTHROPIC_VERSION,
+        ...CLI_HEADERS,
+      };
+    }
+
     return {
       "Content-Type": "application/json",
       "x-api-key": config.apiKey,
@@ -90,6 +114,25 @@ function buildRequestBody(
   }
 
   if (protocol === "anthropic-messages") {
+    if (config.cliMode) {
+      return {
+        model: config.model,
+        max_tokens: 12,
+        stream: false,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: "Reply with OK only.",
+              },
+            ],
+          },
+        ],
+      };
+    }
+
     return {
       model: config.model,
       max_tokens: 12,
@@ -233,6 +276,92 @@ async function parseFailureResponse(response: Response): Promise<string> {
   return `Request failed with HTTP ${response.status}`;
 }
 
+function buildModelsUrl(config: MonitorConfig): string {
+  return new URL("/v1/models", config.baseUrl).toString();
+}
+
+function extractModelIds(body: unknown): string[] {
+  if (!body || typeof body !== "object") {
+    return [];
+  }
+
+  const payload = body as Record<string, unknown>;
+  const items = Array.isArray(payload.data)
+    ? payload.data
+    : Array.isArray(payload.models)
+      ? payload.models
+      : [];
+
+  return items
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+
+      const row = item as Record<string, unknown>;
+      const id = row.id ?? row.name;
+      return typeof id === "string" ? id : null;
+    })
+    .filter((item): item is string => Boolean(item));
+}
+
+async function runCliListProbe(
+  config: MonitorConfig,
+  pingLatencyMs: number | null,
+  checkedAt: string,
+  startedAt: number
+): Promise<CheckResult> {
+  const response = await fetch(buildModelsUrl(config), {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+      "anthropic-version": ANTHROPIC_VERSION,
+      ...CLI_HEADERS,
+      ...config.headers,
+    },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    cache: "no-store",
+  });
+
+  const latencyMs = Date.now() - startedAt;
+  if (!response.ok) {
+    return {
+      id: config.id,
+      status: "failed",
+      latencyMs,
+      pingLatencyMs,
+      checkedAt,
+      message: await parseFailureResponse(response),
+    };
+  }
+
+  const json = (await response.json()) as unknown;
+  const modelIds = extractModelIds(json);
+  if (!modelIds.includes(config.model)) {
+    return {
+      id: config.id,
+      status: "failed",
+      latencyMs,
+      pingLatencyMs,
+      checkedAt,
+      message: `Model ${config.model} not found in /v1/models response.`,
+    };
+  }
+
+  const status: MonitorStatus =
+    latencyMs > DEGRADED_THRESHOLD_MS ? "degraded" : "healthy";
+
+  return {
+    id: config.id,
+    status,
+    latencyMs,
+    pingLatencyMs,
+    checkedAt,
+    message: `${getStatusLabel(status)} model-list probe succeeded.`,
+  };
+}
+
 export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
   const startedAt = Date.now();
   const checkedAt = new Date().toISOString();
@@ -253,9 +382,15 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
 
   try {
     const protocol = detectProtocol(config);
+    if (config.cliMode && protocol === "anthropic-messages") {
+      return await runCliListProbe(config, pingLatencyMs, checkedAt, startedAt);
+    }
+
+    const cliHeaders = config.cliMode ? CLI_HEADERS : {};
+    const headers = { ...buildHeaders(config, protocol), ...cliHeaders, ...config.headers };
     const response = await fetch(buildUrl(config), {
       method: "POST",
-      headers: buildHeaders(config, protocol),
+      headers,
       body: JSON.stringify(buildRequestBody(config, protocol)),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       cache: "no-store",

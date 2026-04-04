@@ -9,6 +9,8 @@ export interface MonitorModelConfigInput {
   model: string;
   description?: string;
   enabled?: boolean;
+  headers?: Record<string, string>;
+  cliMode?: boolean;
 }
 
 export interface MonitorGroupConfigInput {
@@ -42,6 +44,8 @@ export interface MonitorConfig {
   model: string;
   description?: string;
   enabled: boolean;
+  headers?: Record<string, string>;
+  cliMode?: boolean;
 }
 
 export interface CheckResult {

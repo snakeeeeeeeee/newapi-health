@@ -51,6 +51,10 @@ function normalizeModel(
     model: row.model.trim(),
     description: isNonEmptyString(row.description) ? row.description.trim() : undefined,
     enabled: typeof row.enabled === "boolean" ? row.enabled : true,
+    headers: row.headers && typeof row.headers === "object" && !Array.isArray(row.headers)
+      ? row.headers as Record<string, string>
+      : undefined,
+    cliMode: typeof row.cliMode === "boolean" ? row.cliMode : false,
   };
 }
 
