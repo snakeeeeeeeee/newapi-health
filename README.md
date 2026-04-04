@@ -118,6 +118,7 @@ pnpm start
 | `model` | ✅ | 实际请求的模型名 |
 | `description` | ❌ | 卡片描述文字 |
 | `enabled` | ❌ | `false` 时跳过该模型，默认 `true` |
+| `cliMode` | ❌ | 仅对 Claude Code / CLI 专用中转有效。启用后不再发 `/v1/messages` 对话测试，而是改为请求 `/v1/models` 检查目标模型是否存在。 |
 
 ### 支持的协议
 
@@ -137,6 +138,31 @@ pnpm start
 - 响应文本包含 `ok`（不区分大小写）→ 健康
 - 延迟超过阈值 → 标记为「响应较慢」
 - 超时 / HTTP 错误 / 鉴权失败 / 响应结构异常 → 标记为「检测失败」
+
+### Claude Code / CLI 专用路由
+
+某些中转站并不完全兼容标准 Anthropic `messages` 测试，而是只对 Claude Code CLI 请求友好。这种场景建议在模型配置里加：
+
+```json
+"cliMode": true
+```
+
+启用后，这类模型会改用 `/v1/models` 做弱探测：
+
+- 使用 `Authorization: Bearer` 认证
+- 自动附带 Claude CLI 相关 headers
+- 检查模型列表里是否包含当前 `model`
+
+这种方式适合：
+
+- Claude Code 专用中转
+- 开了“请求头覆盖 / 请求体透传”的 CLI 渠道
+- 标准 `messages` 测试经常报错，但模型列表接口正常的情况
+
+注意：
+
+- `cliMode` 只建议用于 Claude / Anthropic 的 CLI 专用路由
+- 普通 Anthropic 官方接口、OpenAI-compatible、Gemini 不需要开启
 
 ---
 
