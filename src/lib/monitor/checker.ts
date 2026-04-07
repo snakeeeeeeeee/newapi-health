@@ -250,6 +250,40 @@ function isGeminiResponseValid(body: unknown): boolean {
   return Array.isArray(parts) && parts.length > 0;
 }
 
+function isOpenAIResponseValid(text: string, protocol: RequestProtocol): boolean {
+  if (protocol !== "openai-chat" && protocol !== "openai-responses") {
+    return false;
+  }
+
+  return text.trim().length > 0;
+}
+
+function isOpenAICompatibleResponseValid(
+  body: unknown,
+  protocol: RequestProtocol
+): boolean {
+  if (!body || typeof body !== "object") {
+    return false;
+  }
+
+  const payload = body as Record<string, unknown>;
+
+  if (protocol === "openai-chat") {
+    return (
+      Array.isArray(payload.choices) &&
+      payload.choices.length > 0 &&
+      typeof payload.choices[0] === "object" &&
+      payload.choices[0] !== null
+    );
+  }
+
+  if (protocol === "openai-responses") {
+    return payload.status === "completed" && payload.error === null;
+  }
+
+  return false;
+}
+
 function getStatusLabel(status: MonitorStatus): string {
   if (status === "healthy") {
     return "Healthy";
@@ -410,8 +444,14 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
 
     const json = (await response.json()) as unknown;
     const text = getResponseText(json, protocol).toLowerCase();
+    const isValidOpenAI = isOpenAIResponseValid(text, protocol);
+    const isValidOpenAICompatible = isOpenAICompatibleResponseValid(json, protocol);
     const isValidGemini = protocol === "gemini-generate-content" && isGeminiResponseValid(json);
-    const passedValidation = isValidGemini || text.includes(HEALTHY_TOKEN);
+    const passedValidation =
+      isValidOpenAI ||
+      isValidOpenAICompatible ||
+      isValidGemini ||
+      text.includes(HEALTHY_TOKEN);
 
     if (!passedValidation) {
       return {
