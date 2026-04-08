@@ -296,7 +296,8 @@ function getStatusLabel(status: MonitorStatus): string {
 }
 
 async function readOpenAIStream(
-  response: Response
+  response: Response,
+  requestStartedAt: number
 ): Promise<{ valid: boolean; text: string; firstChunkLatencyMs: number | null }> {
   if (!response.body) {
     return { valid: false, text: "", firstChunkLatencyMs: null };
@@ -304,7 +305,6 @@ async function readOpenAIStream(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  const startedAt = Date.now();
   let firstChunkLatencyMs: number | null = null;
   let buffer = "";
   let collectedText = "";
@@ -336,17 +336,16 @@ async function readOpenAIStream(
           const json = JSON.parse(payload) as Record<string, unknown>;
           const choices = Array.isArray(json.choices) ? json.choices : [];
           if (choices.length > 0) {
-            sawChoiceChunk = true;
-            if (firstChunkLatencyMs === null) {
-              firstChunkLatencyMs = Date.now() - startedAt;
-            }
-
             const firstChoice = choices[0];
             if (firstChoice && typeof firstChoice === "object") {
               const delta = (firstChoice as Record<string, unknown>).delta;
               if (delta && typeof delta === "object") {
                 const content = (delta as Record<string, unknown>).content;
-                if (typeof content === "string") {
+                if (typeof content === "string" && content.length > 0) {
+                  sawChoiceChunk = true;
+                  if (firstChunkLatencyMs === null) {
+                    firstChunkLatencyMs = Math.max(1, Date.now() - requestStartedAt);
+                  }
                   collectedText += content;
                 }
               }
@@ -469,7 +468,6 @@ async function runCliListProbe(
 }
 
 export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
-  const startedAt = Date.now();
   const checkedAt = new Date().toISOString();
 
   // ── ping ──────────────────────────────────────────────────────────────────
@@ -486,10 +484,12 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
     // ping failure is non-fatal — leave null
   }
 
+  const requestStartedAt = Date.now();
+
   try {
     const protocol = detectProtocol(config);
     if (config.cliMode && protocol === "anthropic-messages") {
-      return await runCliListProbe(config, pingLatencyMs, checkedAt, startedAt);
+      return await runCliListProbe(config, pingLatencyMs, checkedAt, requestStartedAt);
     }
 
     const cliHeaders = config.cliMode ? CLI_HEADERS : {};
@@ -502,7 +502,7 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
       cache: "no-store",
     });
 
-    const latencyMs = Date.now() - startedAt;
+    const latencyMs = Date.now() - requestStartedAt;
     if (!response.ok) {
       return {
         id: config.id,
@@ -515,26 +515,27 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
     }
 
     if (protocol === "openai-chat") {
-      const streamResult = await readOpenAIStream(response);
+      const streamResult = await readOpenAIStream(response, requestStartedAt);
       if (!streamResult.valid) {
         return {
           id: config.id,
           status: "failed",
-          latencyMs: Date.now() - startedAt,
+          latencyMs: Math.max(1, Date.now() - requestStartedAt),
           pingLatencyMs,
           checkedAt,
           message: "Stream response did not contain any valid chunks.",
         };
       }
 
-      const latencyMs = streamResult.firstChunkLatencyMs ?? Date.now() - startedAt;
+      const latencyMs = streamResult.firstChunkLatencyMs ?? (Date.now() - requestStartedAt);
+      const safeLatencyMs = Math.max(1, latencyMs);
       const status: MonitorStatus =
-        latencyMs > DEGRADED_THRESHOLD_MS ? "degraded" : "healthy";
+        safeLatencyMs > DEGRADED_THRESHOLD_MS ? "degraded" : "healthy";
 
       return {
         id: config.id,
         status,
-        latencyMs,
+        latencyMs: safeLatencyMs,
         pingLatencyMs,
         checkedAt,
         message:
@@ -578,7 +579,7 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
       message: `${getStatusLabel(status)} response received.`,
     };
   } catch (error) {
-    const latencyMs = Date.now() - startedAt;
+    const latencyMs = Math.max(1, Date.now() - requestStartedAt);
     const message =
       error instanceof Error ? error.message : "Unknown monitor error";
 
