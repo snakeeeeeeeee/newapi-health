@@ -96,6 +96,7 @@ function buildRequestBody(
       model: config.model,
       temperature: 0,
       max_tokens: 12,
+      stream: true,
       messages: [
         {
           role: "user",
@@ -294,6 +295,77 @@ function getStatusLabel(status: MonitorStatus): string {
   return "Failed";
 }
 
+async function readOpenAIStream(
+  response: Response
+): Promise<{ valid: boolean; text: string; firstChunkLatencyMs: number | null }> {
+  if (!response.body) {
+    return { valid: false, text: "", firstChunkLatencyMs: null };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const startedAt = Date.now();
+  let firstChunkLatencyMs: number | null = null;
+  let buffer = "";
+  let collectedText = "";
+  let sawChoiceChunk = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const event of events) {
+      const lines = event
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith("data:"));
+
+      for (const line of lines) {
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") {
+          continue;
+        }
+
+        try {
+          const json = JSON.parse(payload) as Record<string, unknown>;
+          const choices = Array.isArray(json.choices) ? json.choices : [];
+          if (choices.length > 0) {
+            sawChoiceChunk = true;
+            if (firstChunkLatencyMs === null) {
+              firstChunkLatencyMs = Date.now() - startedAt;
+            }
+
+            const firstChoice = choices[0];
+            if (firstChoice && typeof firstChoice === "object") {
+              const delta = (firstChoice as Record<string, unknown>).delta;
+              if (delta && typeof delta === "object") {
+                const content = (delta as Record<string, unknown>).content;
+                if (typeof content === "string") {
+                  collectedText += content;
+                }
+              }
+            }
+          }
+        } catch {
+          continue;
+        }
+      }
+    }
+  }
+
+  return {
+    valid: sawChoiceChunk,
+    text: collectedText,
+    firstChunkLatencyMs,
+  };
+}
+
 async function parseFailureResponse(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as Record<string, unknown>;
@@ -439,6 +511,36 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
         pingLatencyMs,
         checkedAt,
         message: await parseFailureResponse(response),
+      };
+    }
+
+    if (protocol === "openai-chat") {
+      const streamResult = await readOpenAIStream(response);
+      if (!streamResult.valid) {
+        return {
+          id: config.id,
+          status: "failed",
+          latencyMs: Date.now() - startedAt,
+          pingLatencyMs,
+          checkedAt,
+          message: "Stream response did not contain any valid chunks.",
+        };
+      }
+
+      const latencyMs = streamResult.firstChunkLatencyMs ?? Date.now() - startedAt;
+      const status: MonitorStatus =
+        latencyMs > DEGRADED_THRESHOLD_MS ? "degraded" : "healthy";
+
+      return {
+        id: config.id,
+        status,
+        latencyMs,
+        pingLatencyMs,
+        checkedAt,
+        message:
+          streamResult.text.trim().length > 0
+            ? `${getStatusLabel(status)} stream response received.`
+            : `${getStatusLabel(status)} stream connected without text payload.`,
       };
     }
 
