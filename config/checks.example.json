@@ -3,43 +3,42 @@
     {
       "id": "openai",
       "name": "OpenAI",
+      "defaults": {
+        "baseUrl": "https://api.openai.com",
+        "endpoint": "/v1/chat/completions",
+        "enabled": true
+      },
       "groups": [
         {
           "id": "default-openai",
-          "name": "default-openai",
-          "models": [
-            {
-              "id": "openai-primary",
-              "name": "OpenAI Primary",
-              "baseUrl": "https://api.openai.com",
-              "apiKey": "sk-replace-me",
-              "endpoint": "/v1/chat/completions",
-              "model": "gpt-4o-mini",
-              "description": "OpenAI 官方接口示例。",
-              "enabled": true
-            }
-          ]
+          "defaults": {
+            "apiKey": "sk-replace-me",
+            "model": "gpt-4o-mini",
+            "description": "OpenAI 官方接口示例。"
+          },
+          "models": ["openai-primary"]
         }
       ]
     },
     {
       "id": "claude",
       "name": "Anthropic",
+      "defaults": {
+        "baseUrl": "https://your-proxy.example.com",
+        "endpoint": "/v1/messages",
+        "description": "Anthropic Messages API 示例。",
+        "enabled": true
+      },
       "groups": [
         {
           "id": "claude-max",
-          "name": "claude-max",
+          "defaults": {
+            "apiKey": "sk-replace-me"
+          },
           "models": [
-            {
-              "id": "claude-haiku-4-5",
-              "name": "claude-haiku-4-5",
-              "model": "claude-haiku-4-5",
-              "baseUrl": "https://your-proxy.example.com",
-              "apiKey": "sk-replace-me",
-              "endpoint": "/v1/messages",
-              "description": "Anthropic Messages API 示例。",
-              "enabled": true
-            }
+            "claude-haiku-4-5",
+            "claude-sonnet-4-6",
+            "claude-opus-4-6"
           ]
         }
       ]
@@ -47,22 +46,20 @@
     {
       "id": "gemini",
       "name": "Google",
+      "defaults": {
+        "baseUrl": "https://your-proxy.example.com",
+        "endpoint": "/v1beta/models/{model}:generateContent",
+        "description": "Google Gemini API 示例。",
+        "enabled": true
+      },
       "groups": [
         {
           "id": "gemini-flash",
-          "name": "gemini-flash",
-          "models": [
-            {
-              "id": "gemini-primary",
-              "name": "Gemini Flash",
-              "baseUrl": "https://your-proxy.example.com",
-              "apiKey": "sk-replace-me",
-              "endpoint": "/v1beta/models/{model}:generateContent",
-              "model": "gemini-2.0-flash",
-              "description": "Google Gemini API 示例。",
-              "enabled": true
-            }
-          ]
+          "defaults": {
+            "apiKey": "sk-replace-me",
+            "model": "gemini-2.0-flash"
+          },
+          "models": ["gemini-primary"]
         }
       ]
     }

@@ -68,18 +68,13 @@ pnpm start
       "groups": [
         {
           "id": "claude-max",
-          "name": "claude-max",
+          "defaults": {
+            "apiKey": "sk-xxxxxxxx"
+          },
           "models": [
-            {
-              "id": "claude-sonnet-4-6",
-              "name": "claude-sonnet-4-6",
-              "baseUrl": "https://your-proxy.example.com",
-              "apiKey": "sk-xxxxxxxx",
-              "endpoint": "/v1/messages",
-              "model": "claude-sonnet-4-6",
-              "description": "主力线路",
-              "enabled": true
-            }
+            "claude-haiku-4-5",
+            "claude-sonnet-4-6",
+            "claude-opus-4-6"
           ]
         }
       ]
@@ -95,7 +90,8 @@ pnpm start
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `id` | ✅ | 唯一标识，如 `openai` / `claude` / `gemini` |
-| `name` | ✅ | 页面展示名称 |
+| `name` | ❌ | 页面展示名称，省略时默认等于 `id` |
+| `defaults` | ❌ | 该 provider 下模型的默认配置 |
 | `groups` | ✅ | 分组数组 |
 
 **group**
@@ -103,7 +99,8 @@ pnpm start
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `id` | ✅ | 分组唯一标识 |
-| `name` | ✅ | 分组展示名称 |
+| `name` | ❌ | 分组展示名称，省略时默认等于 `id` |
+| `defaults` | ❌ | 该分组下模型的默认配置 |
 | `models` | ✅ | 模型数组 |
 
 **model**
@@ -111,14 +108,54 @@ pnpm start
 | 字段 | 必填 | 说明 |
 |------|------|------|
 | `id` | ✅ | 模型唯一 ID，同一分组内不能重复 |
-| `name` | ✅ | 卡片展示名称 |
-| `baseUrl` | ✅ | 接口根地址，不带末尾斜杠 |
-| `apiKey` | ✅ | API 密钥 |
-| `endpoint` | ✅ | 协议路径，见下方支持的协议 |
-| `model` | ✅ | 实际请求的模型名 |
+| `name` | ❌ | 卡片展示名称，省略时默认等于 `id` |
+| `baseUrl` | ❌ | 接口根地址，不带末尾斜杠，可从 `defaults` 继承 |
+| `apiKey` | ❌ | API 密钥，可从 `defaults` 继承 |
+| `endpoint` | ❌ | 协议路径，可从 `defaults` 继承 |
+| `model` | ❌ | 实际请求模型名，省略时默认等于 `id`，也可从 `defaults` 继承 |
 | `description` | ❌ | 卡片描述文字 |
 | `enabled` | ❌ | `false` 时跳过该模型，默认 `true` |
 | `cliMode` | ❌ | 仅对 Claude Code / CLI 专用中转有效。启用后不再发 `/v1/messages` 对话测试，而是改为请求 `/v1/models` 检查目标模型是否存在。 |
+
+### 简化规则
+
+- `provider.name` 省略时，默认等于 `provider.id`
+- `group.name` 省略时，默认等于 `group.id`
+- `model.name` 省略时，默认等于 `model.id`
+- `model.model` 省略时，默认等于 `model.id`
+- `models` 支持直接写字符串：
+
+```json
+"models": [
+  "claude-haiku-4-5",
+  "claude-sonnet-4-6",
+  "claude-opus-4-6"
+]
+```
+
+上面会自动展开为：
+
+- `id = 字符串`
+- `name = 字符串`
+- `model = 字符串`
+
+### defaults 继承顺序
+
+配置合并优先级：
+
+```text
+model 自身字段 > group.defaults > provider.defaults
+```
+
+最适合放进 `defaults` 的字段有：
+
+- `baseUrl`
+- `apiKey`
+- `endpoint`
+- `model`
+- `description`
+- `enabled`
+- `cliMode`
 
 ### 支持的协议
 

@@ -1,29 +1,36 @@
 export type MonitorStatus = "pending" | "healthy" | "degraded" | "failed";
 
-export interface MonitorModelConfigInput {
-  id: string;
-  name: string;
-  baseUrl: string;
-  apiKey: string;
-  endpoint: string;
-  model: string;
+export interface MonitorModelDefaultsInput {
+  name?: string;
+  model?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  endpoint?: string;
   description?: string;
   enabled?: boolean;
   headers?: Record<string, string>;
   cliMode?: boolean;
 }
 
+export type MonitorModelConfigInput =
+  | string
+  | ({
+      id: string;
+    } & MonitorModelDefaultsInput);
+
 export interface MonitorGroupConfigInput {
   id: string;
-  name: string;
+  name?: string;
   description?: string;
+  defaults?: MonitorModelDefaultsInput;
   models: MonitorModelConfigInput[];
 }
 
 export interface MonitorProviderConfigInput {
   id: string;
-  name: string;
+  name?: string;
   description?: string;
+  defaults?: MonitorModelDefaultsInput;
   groups: MonitorGroupConfigInput[];
 }
 

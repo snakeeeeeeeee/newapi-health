@@ -6,6 +6,7 @@ import type {
   MonitorConfigDocument,
   MonitorGroupConfigInput,
   MonitorModelConfigInput,
+  MonitorModelDefaultsInput,
   MonitorProviderConfigInput,
 } from "./types";
 
@@ -15,46 +16,117 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function normalizeModel(
-  provider: MonitorProviderConfigInput,
-  group: MonitorGroupConfigInput,
-  input: unknown
-): MonitorConfig | null {
+function normalizeHeaders(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(value).filter(
+    ([key, headerValue]) => isNonEmptyString(key) && isNonEmptyString(headerValue)
+  );
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function normalizeDefaults(value: unknown): MonitorModelDefaultsInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const row = value as Record<string, unknown>;
+  return {
+    name: isNonEmptyString(row.name) ? row.name.trim() : undefined,
+    model: isNonEmptyString(row.model) ? row.model.trim() : undefined,
+    baseUrl: isNonEmptyString(row.baseUrl) ? row.baseUrl.trim().replace(/\/+$/, "") : undefined,
+    apiKey: isNonEmptyString(row.apiKey) ? row.apiKey.trim() : undefined,
+    endpoint: isNonEmptyString(row.endpoint) ? row.endpoint.trim() : undefined,
+    description: isNonEmptyString(row.description) ? row.description.trim() : undefined,
+    enabled: typeof row.enabled === "boolean" ? row.enabled : undefined,
+    headers: normalizeHeaders(row.headers),
+    cliMode: typeof row.cliMode === "boolean" ? row.cliMode : undefined,
+  };
+}
+
+function mergeHeaders(
+  ...sources: Array<Record<string, string> | undefined>
+): Record<string, string> | undefined {
+  const merged = Object.assign({}, ...sources.filter(Boolean));
+  return Object.keys(merged).length > 0 ? merged : undefined;
+}
+
+function normalizeModelInput(input: unknown): { id: string } & MonitorModelDefaultsInput | null {
+  if (isNonEmptyString(input)) {
+    return { id: input.trim() };
+  }
+
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return null;
   }
 
   const row = input as Record<string, unknown>;
+  if (!isNonEmptyString(row.id)) {
+    return null;
+  }
+
+  const defaults = normalizeDefaults(row);
+  return {
+    id: row.id.trim(),
+    ...defaults,
+  };
+}
+
+function normalizeModel(
+  provider: MonitorProviderConfigInput,
+  group: MonitorGroupConfigInput,
+  providerDefaults: MonitorModelDefaultsInput,
+  groupDefaults: MonitorModelDefaultsInput,
+  input: unknown
+): MonitorConfig | null {
+  const row = normalizeModelInput(input);
+  if (!row) {
+    return null;
+  }
+
+  const baseUrl = row.baseUrl ?? groupDefaults.baseUrl ?? providerDefaults.baseUrl;
+  const apiKey = row.apiKey ?? groupDefaults.apiKey ?? providerDefaults.apiKey;
+  const endpoint = row.endpoint ?? groupDefaults.endpoint ?? providerDefaults.endpoint;
+  const model = row.model ?? groupDefaults.model ?? providerDefaults.model ?? row.id;
+
   if (
-    !isNonEmptyString(row.id) ||
-    !isNonEmptyString(row.name) ||
-    !isNonEmptyString(row.baseUrl) ||
-    !isNonEmptyString(row.apiKey) ||
-    !isNonEmptyString(row.endpoint) ||
-    !isNonEmptyString(row.model)
+    !isNonEmptyString(baseUrl) ||
+    !isNonEmptyString(apiKey) ||
+    !isNonEmptyString(endpoint) ||
+    !isNonEmptyString(model)
   ) {
     return null;
   }
 
+  const name =
+    row.name ??
+    groupDefaults.name ??
+    providerDefaults.name ??
+    row.id;
+
+  const enabled = row.enabled ?? groupDefaults.enabled ?? providerDefaults.enabled ?? true;
+  const description = row.description ?? groupDefaults.description ?? providerDefaults.description;
+  const headers = mergeHeaders(providerDefaults.headers, groupDefaults.headers, row.headers);
+  const cliMode = row.cliMode ?? groupDefaults.cliMode ?? providerDefaults.cliMode ?? false;
+
   return {
-    // Runtime id must be unique across the whole dashboard, even if the same
-    // model identifier appears under multiple groups or providers.
     id: `${provider.id.trim()}__${group.id.trim()}__${row.id.trim()}`,
-    name: row.name.trim(),
+    name,
     providerId: provider.id,
-    providerName: provider.name,
+    providerName: provider.name ?? provider.id,
     groupId: group.id,
-    groupName: group.name,
-    baseUrl: row.baseUrl.trim().replace(/\/+$/, ""),
-    apiKey: row.apiKey.trim(),
-    endpoint: row.endpoint.trim(),
-    model: row.model.trim(),
-    description: isNonEmptyString(row.description) ? row.description.trim() : undefined,
-    enabled: typeof row.enabled === "boolean" ? row.enabled : true,
-    headers: row.headers && typeof row.headers === "object" && !Array.isArray(row.headers)
-      ? row.headers as Record<string, string>
-      : undefined,
-    cliMode: typeof row.cliMode === "boolean" ? row.cliMode : false,
+    groupName: group.name ?? group.id,
+    baseUrl,
+    apiKey,
+    endpoint,
+    model,
+    description,
+    enabled,
+    headers,
+    cliMode,
   };
 }
 
@@ -64,18 +136,15 @@ function normalizeProvider(input: unknown): MonitorProviderConfigInput | null {
   }
 
   const row = input as Record<string, unknown>;
-  if (
-    !isNonEmptyString(row.id) ||
-    !isNonEmptyString(row.name) ||
-    !Array.isArray(row.groups)
-  ) {
+  if (!isNonEmptyString(row.id) || !Array.isArray(row.groups)) {
     return null;
   }
 
   return {
     id: row.id.trim(),
-    name: row.name.trim(),
+    name: isNonEmptyString(row.name) ? row.name.trim() : undefined,
     description: isNonEmptyString(row.description) ? row.description.trim() : undefined,
+    defaults: normalizeDefaults(row.defaults),
     groups: row.groups
       .map((group): MonitorGroupConfigInput | null => {
         if (!group || typeof group !== "object" || Array.isArray(group)) {
@@ -83,24 +152,18 @@ function normalizeProvider(input: unknown): MonitorProviderConfigInput | null {
         }
 
         const groupRow = group as Record<string, unknown>;
-        if (
-          !isNonEmptyString(groupRow.id) ||
-          !isNonEmptyString(groupRow.name) ||
-          !Array.isArray(groupRow.models)
-        ) {
+        if (!isNonEmptyString(groupRow.id) || !Array.isArray(groupRow.models)) {
           return null;
         }
 
         return {
           id: groupRow.id.trim(),
-          name: groupRow.name.trim(),
+          name: isNonEmptyString(groupRow.name) ? groupRow.name.trim() : undefined,
           description: isNonEmptyString(groupRow.description)
             ? groupRow.description.trim()
             : undefined,
-          models: groupRow.models.filter(
-            (item): item is MonitorModelConfigInput =>
-              Boolean(item && typeof item === "object" && !Array.isArray(item))
-          ),
+          defaults: normalizeDefaults(groupRow.defaults),
+          models: groupRow.models.filter((item) => Boolean(item)) as MonitorModelConfigInput[],
         };
       })
       .filter((group): group is MonitorGroupConfigInput => Boolean(group)),
@@ -108,14 +171,20 @@ function normalizeProvider(input: unknown): MonitorProviderConfigInput | null {
 }
 
 function flattenProviders(document: MonitorConfigDocument): MonitorConfig[] {
-  return document.providers.flatMap((provider) =>
-    provider.groups.flatMap((group) =>
-      group.models
-        .map((model) => normalizeModel(provider, group, model))
+  return document.providers.flatMap((provider) => {
+    const providerDefaults = provider.defaults ?? {};
+
+    return provider.groups.flatMap((group) => {
+      const groupDefaults = group.defaults ?? {};
+
+      return group.models
+        .map((model) =>
+          normalizeModel(provider, group, providerDefaults, groupDefaults, model)
+        )
         .filter((item): item is MonitorConfig => Boolean(item))
-        .filter((item) => item.enabled)
-    )
-  );
+        .filter((item) => item.enabled);
+    });
+  });
 }
 
 function isLegacyArrayConfig(parsed: unknown): parsed is MonitorModelConfigInput[] {
@@ -129,11 +198,9 @@ export async function loadMonitorConfigs(): Promise<MonitorConfig[]> {
   if (isLegacyArrayConfig(parsed)) {
     const fallbackProvider: MonitorProviderConfigInput = {
       id: "default",
-      name: "Default",
       groups: [
         {
           id: "default",
-          name: "default",
           models: parsed,
         },
       ],
