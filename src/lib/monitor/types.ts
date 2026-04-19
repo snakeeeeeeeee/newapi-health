@@ -10,6 +10,7 @@ export interface MonitorModelDefaultsInput {
   enabled?: boolean;
   headers?: Record<string, string>;
   cliMode?: boolean;
+  checkMode?: "real" | "list";
 }
 
 export type MonitorModelConfigInput =
@@ -53,6 +54,7 @@ export interface MonitorConfig {
   enabled: boolean;
   headers?: Record<string, string>;
   cliMode?: boolean;
+  checkMode: "real" | "list";
 }
 
 export interface CheckResult {

@@ -116,6 +116,7 @@ pnpm start
 | `description` | ❌ | 卡片描述文字 |
 | `enabled` | ❌ | `false` 时跳过该模型，默认 `true` |
 | `cliMode` | ❌ | 仅对 Claude Code / CLI 专用中转有效。启用后不再发 `/v1/messages` 对话测试，而是改为请求 `/v1/models` 检查目标模型是否存在。 |
+| `checkMode` | ❌ | `real` 或 `list`。`real` 发真实请求，`list` 只请求模型列表并检查目标模型是否存在。 |
 
 ### 简化规则
 
@@ -156,6 +157,7 @@ model 自身字段 > group.defaults > provider.defaults
 - `description`
 - `enabled`
 - `cliMode`
+- `checkMode`
 
 ### 支持的协议
 
@@ -170,9 +172,18 @@ model 自身字段 > group.defaults > provider.defaults
 
 ### 检测方式
 
-每次检测向接口发送 `Reply with OK only.` 的请求：
+`checkMode` 支持两种：
 
-- 响应文本包含 `ok`（不区分大小写）→ 健康
+- `real`：发真实请求，适合少量关键模型
+- `list`：只请求模型列表，适合大量模型，成本更低
+
+真实检测时发送的提示词是：
+
+```text
+Say pong in one word only.
+```
+
+- 响应文本包含 `pong`（不区分大小写）→ 健康
 - 延迟超过阈值 → 标记为「响应较慢」
 - 超时 / HTTP 错误 / 鉴权失败 / 响应结构异常 → 标记为「检测失败」
 

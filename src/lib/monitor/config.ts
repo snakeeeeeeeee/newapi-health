@@ -44,6 +44,7 @@ function normalizeDefaults(value: unknown): MonitorModelDefaultsInput {
     enabled: typeof row.enabled === "boolean" ? row.enabled : undefined,
     headers: normalizeHeaders(row.headers),
     cliMode: typeof row.cliMode === "boolean" ? row.cliMode : undefined,
+    checkMode: row.checkMode === "list" || row.checkMode === "real" ? row.checkMode : undefined,
   };
 }
 
@@ -111,6 +112,7 @@ function normalizeModel(
   const description = row.description ?? groupDefaults.description ?? providerDefaults.description;
   const headers = mergeHeaders(providerDefaults.headers, groupDefaults.headers, row.headers);
   const cliMode = row.cliMode ?? groupDefaults.cliMode ?? providerDefaults.cliMode ?? false;
+  const checkMode = row.checkMode ?? groupDefaults.checkMode ?? providerDefaults.checkMode ?? "real";
 
   return {
     id: `${provider.id.trim()}__${group.id.trim()}__${row.id.trim()}`,
@@ -127,6 +129,7 @@ function normalizeModel(
     enabled,
     headers,
     cliMode,
+    checkMode,
   };
 }
 

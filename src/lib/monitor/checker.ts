@@ -2,7 +2,7 @@ import type { CheckResult, MonitorConfig, MonitorStatus } from "./types";
 
 const REQUEST_TIMEOUT_MS = Number(process.env.CHECK_TIMEOUT_MS ?? "20000");
 const DEGRADED_THRESHOLD_MS = Number(process.env.DEGRADED_THRESHOLD_MS ?? "4000");
-const HEALTHY_TOKEN = "ok";
+const HEALTHY_TOKEN = "pong";
 const ANTHROPIC_VERSION = "2023-06-01";
 
 const CLI_HEADERS: Record<string, string> = {
@@ -100,7 +100,7 @@ function buildRequestBody(
       messages: [
         {
           role: "user",
-          content: "Reply with OK only.",
+          content: "Say pong in one word only.",
         },
       ],
     };
@@ -109,7 +109,7 @@ function buildRequestBody(
   if (protocol === "openai-responses") {
     return {
       model: config.model,
-      input: "Reply with OK only.",
+      input: "Say pong in one word only.",
       max_output_tokens: 12,
     };
   }
@@ -126,7 +126,7 @@ function buildRequestBody(
             content: [
               {
                 type: "text",
-                text: "Reply with OK only.",
+                text: "Say pong in one word only.",
               },
             ],
           },
@@ -140,7 +140,7 @@ function buildRequestBody(
       messages: [
         {
           role: "user",
-          content: "Reply with OK only.",
+          content: "Say pong in one word only.",
         },
       ],
     };
@@ -150,7 +150,7 @@ function buildRequestBody(
     contents: [
       {
         role: "user",
-        parts: [{ text: "Reply with OK only." }],
+        parts: [{ text: "Say pong in one word only." }],
       },
     ],
     generationConfig: {
@@ -382,6 +382,14 @@ async function parseFailureResponse(response: Response): Promise<string> {
 }
 
 function buildModelsUrl(config: MonitorConfig): string {
+  const protocol = detectProtocol(config);
+  if (protocol === "gemini-generate-content") {
+    const endpoint = config.endpoint.replace("{model}", encodeURIComponent(config.model));
+    const match = endpoint.match(/^(\/v\d+(?:beta)?)\/models\//);
+    const prefix = match?.[1] ?? "/v1beta";
+    return new URL(`${prefix}/models`, config.baseUrl).toString();
+  }
+
   return new URL("/v1/models", config.baseUrl).toString();
 }
 
@@ -405,26 +413,33 @@ function extractModelIds(body: unknown): string[] {
 
       const row = item as Record<string, unknown>;
       const id = row.id ?? row.name;
-      return typeof id === "string" ? id : null;
+      if (typeof id !== "string") {
+        return null;
+      }
+
+      return id.startsWith("models/") ? id.slice("models/".length) : id;
     })
     .filter((item): item is string => Boolean(item));
 }
 
-async function runCliListProbe(
+async function runListProbe(
   config: MonitorConfig,
   pingLatencyMs: number | null,
   checkedAt: string,
   startedAt: number
 ): Promise<CheckResult> {
+  const protocol = detectProtocol(config);
+  const cliHeaders = config.cliMode ? CLI_HEADERS : {};
+  const headers = {
+    Accept: "application/json",
+    ...buildHeaders(config, protocol),
+    ...cliHeaders,
+    ...config.headers,
+  };
+
   const response = await fetch(buildModelsUrl(config), {
     method: "GET",
-    headers: {
-      Accept: "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-      "anthropic-version": ANTHROPIC_VERSION,
-      ...CLI_HEADERS,
-      ...config.headers,
-    },
+    headers,
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     cache: "no-store",
   });
@@ -488,8 +503,8 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
 
   try {
     const protocol = detectProtocol(config);
-    if (config.cliMode && protocol === "anthropic-messages") {
-      return await runCliListProbe(config, pingLatencyMs, checkedAt, requestStartedAt);
+    if (config.checkMode === "list") {
+      return await runListProbe(config, pingLatencyMs, checkedAt, requestStartedAt);
     }
 
     const cliHeaders = config.cliMode ? CLI_HEADERS : {};
