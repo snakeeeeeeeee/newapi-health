@@ -16,6 +16,12 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+function normalizePositiveNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.round(value)
+    : undefined;
+}
+
 function normalizeHeaders(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -42,6 +48,7 @@ function normalizeDefaults(value: unknown): MonitorModelDefaultsInput {
     endpoint: isNonEmptyString(row.endpoint) ? row.endpoint.trim() : undefined,
     description: isNonEmptyString(row.description) ? row.description.trim() : undefined,
     enabled: typeof row.enabled === "boolean" ? row.enabled : undefined,
+    refreshIntervalMs: normalizePositiveNumber(row.refreshIntervalMs),
     headers: normalizeHeaders(row.headers),
     cliMode: typeof row.cliMode === "boolean" ? row.cliMode : undefined,
     checkMode: row.checkMode === "list" || row.checkMode === "real" ? row.checkMode : undefined,
@@ -110,6 +117,10 @@ function normalizeModel(
 
   const enabled = row.enabled ?? groupDefaults.enabled ?? providerDefaults.enabled ?? true;
   const description = row.description ?? groupDefaults.description ?? providerDefaults.description;
+  const refreshIntervalMs =
+    row.refreshIntervalMs ??
+    groupDefaults.refreshIntervalMs ??
+    providerDefaults.refreshIntervalMs;
   const headers = mergeHeaders(providerDefaults.headers, groupDefaults.headers, row.headers);
   const cliMode = row.cliMode ?? groupDefaults.cliMode ?? providerDefaults.cliMode ?? false;
   const checkMode = row.checkMode ?? groupDefaults.checkMode ?? providerDefaults.checkMode ?? "real";
@@ -127,6 +138,7 @@ function normalizeModel(
     model,
     description,
     enabled,
+    refreshIntervalMs: refreshIntervalMs ?? Number(process.env.REFRESH_INTERVAL_MS ?? "60000"),
     headers,
     cliMode,
     checkMode,

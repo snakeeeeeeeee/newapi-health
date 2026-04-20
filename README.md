@@ -69,7 +69,8 @@ pnpm start
         {
           "id": "claude-max",
           "defaults": {
-            "apiKey": "sk-xxxxxxxx"
+            "apiKey": "sk-xxxxxxxx",
+            "refreshIntervalMs": 300000
           },
           "models": [
             "claude-haiku-4-5",
@@ -115,6 +116,7 @@ pnpm start
 | `model` | ❌ | 实际请求模型名，省略时默认等于 `id`，也可从 `defaults` 继承 |
 | `description` | ❌ | 卡片描述文字 |
 | `enabled` | ❌ | `false` 时跳过该模型，默认 `true` |
+| `refreshIntervalMs` | ❌ | 刷新间隔（毫秒）。不写时默认使用 `.env.local` 里的 `REFRESH_INTERVAL_MS`。 |
 | `cliMode` | ❌ | 仅对 Claude Code / CLI 专用中转有效。启用后不再发 `/v1/messages` 对话测试，而是改为请求 `/v1/models` 检查目标模型是否存在。 |
 | `checkMode` | ❌ | `real` 或 `list`。`real` 发真实请求，`list` 只请求模型列表并检查目标模型是否存在。 |
 
@@ -156,8 +158,23 @@ model 自身字段 > group.defaults > provider.defaults
 - `model`
 - `description`
 - `enabled`
+- `refreshIntervalMs`
 - `cliMode`
 - `checkMode`
+
+例如某个分组想单独改成 2 分钟刷新一次：
+
+```json
+{
+  "id": "gemini-flash",
+  "defaults": {
+    "apiKey": "sk-replace-me",
+    "model": "gemini-2.0-flash",
+    "refreshIntervalMs": 120000
+  },
+  "models": ["gemini-primary"]
+}
+```
 
 ### 支持的协议
 

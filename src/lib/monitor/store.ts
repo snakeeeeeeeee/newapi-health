@@ -13,6 +13,7 @@ const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT ?? "40");
 const REFRESH_INTERVAL_MS = Number(process.env.REFRESH_INTERVAL_MS ?? "60000");
 const CHECK_CONCURRENCY = Number(process.env.CHECK_CONCURRENCY ?? "4");
 const LIVE_POLL_INTERVAL_MS = Number(process.env.LIVE_POLL_INTERVAL_MS ?? "1500");
+const SCHEDULER_TICK_MS = 1000;
 
 interface RuntimeState {
   historyById: Map<string, DashboardCheck["history"]>;
@@ -143,8 +144,26 @@ async function refreshInternal(): Promise<void> {
   const state = getRuntimeState();
   const configs = await loadMonitorConfigs();
   ensureEntries(state, configs);
+  const now = Date.now();
+  const dueConfigs = configs.filter((config) => {
+    const latest = state.latestById.get(config.id);
+    if (!latest?.checkedAt) {
+      return true;
+    }
 
-  await mapWithConcurrency(configs, CHECK_CONCURRENCY, async (config) => {
+    const lastCheckedAt = new Date(latest.checkedAt).getTime();
+    if (!Number.isFinite(lastCheckedAt)) {
+      return true;
+    }
+
+    return now - lastCheckedAt >= config.refreshIntervalMs;
+  });
+
+  if (dueConfigs.length === 0) {
+    return;
+  }
+
+  await mapWithConcurrency(dueConfigs, CHECK_CONCURRENCY, async (config) => {
     const result = await runCheck(config);
     const history = pushHistory(state, config.id, {
       status: result.status,
@@ -187,7 +206,7 @@ export function ensureMonitorLoopStarted(): void {
 
   state.timer = setInterval(() => {
     void refreshHealthData();
-  }, REFRESH_INTERVAL_MS);
+  }, Math.min(REFRESH_INTERVAL_MS, SCHEDULER_TICK_MS));
 }
 
 export async function refreshHealthData(): Promise<void> {

@@ -8,6 +8,7 @@ export interface MonitorModelDefaultsInput {
   endpoint?: string;
   description?: string;
   enabled?: boolean;
+  refreshIntervalMs?: number;
   headers?: Record<string, string>;
   cliMode?: boolean;
   checkMode?: "real" | "list";
@@ -52,6 +53,7 @@ export interface MonitorConfig {
   model: string;
   description?: string;
   enabled: boolean;
+  refreshIntervalMs: number;
   headers?: Record<string, string>;
   cliMode?: boolean;
   checkMode: "real" | "list";
