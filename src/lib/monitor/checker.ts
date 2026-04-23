@@ -137,6 +137,7 @@ function buildRequestBody(
     return {
       model: config.model,
       max_tokens: 12,
+      stream: true,
       messages: [
         {
           role: "user",
@@ -365,6 +366,78 @@ async function readOpenAIStream(
   };
 }
 
+async function readAnthropicStream(
+  response: Response,
+  requestStartedAt: number
+): Promise<{ valid: boolean; text: string; firstChunkLatencyMs: number | null }> {
+  if (!response.body) {
+    return { valid: false, text: "", firstChunkLatencyMs: null };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let firstChunkLatencyMs: number | null = null;
+  let buffer = "";
+  let collectedText = "";
+  let sawContentChunk = false;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+
+    buffer += decoder.decode(value, { stream: true });
+    const events = buffer.split("\n\n");
+    buffer = events.pop() ?? "";
+
+    for (const event of events) {
+      const lines = event.split("\n").map((line) => line.trim());
+      const eventType = lines
+        .find((line) => line.startsWith("event:"))
+        ?.slice("event:".length)
+        .trim();
+      const dataLines = lines
+        .filter((line) => line.startsWith("data:"))
+        .map((line) => line.slice(5).trim());
+
+      if (dataLines.length === 0) {
+        continue;
+      }
+
+      const payloadText = dataLines.join("\n");
+      if (!payloadText || payloadText === "[DONE]") {
+        continue;
+      }
+
+      try {
+        const json = JSON.parse(payloadText) as Record<string, unknown>;
+        const delta =
+          eventType === "content_block_delta" ? json.delta : undefined;
+
+        if (delta && typeof delta === "object") {
+          const text = (delta as Record<string, unknown>).text;
+          if (typeof text === "string" && text.length > 0) {
+            sawContentChunk = true;
+            if (firstChunkLatencyMs === null) {
+              firstChunkLatencyMs = Math.max(1, Date.now() - requestStartedAt);
+            }
+            collectedText += text;
+          }
+        }
+      } catch {
+        continue;
+      }
+    }
+  }
+
+  return {
+    valid: sawContentChunk,
+    text: collectedText,
+    firstChunkLatencyMs,
+  };
+}
+
 async function parseFailureResponse(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as Record<string, unknown>;
@@ -539,6 +612,37 @@ export async function runCheck(config: MonitorConfig): Promise<CheckResult> {
           pingLatencyMs,
           checkedAt,
           message: "Stream response did not contain any valid chunks.",
+        };
+      }
+
+      const latencyMs = streamResult.firstChunkLatencyMs ?? (Date.now() - requestStartedAt);
+      const safeLatencyMs = Math.max(1, latencyMs);
+      const status: MonitorStatus =
+        safeLatencyMs > DEGRADED_THRESHOLD_MS ? "degraded" : "healthy";
+
+      return {
+        id: config.id,
+        status,
+        latencyMs: safeLatencyMs,
+        pingLatencyMs,
+        checkedAt,
+        message:
+          streamResult.text.trim().length > 0
+            ? `${getStatusLabel(status)} stream response received.`
+            : `${getStatusLabel(status)} stream connected without text payload.`,
+      };
+    }
+
+    if (protocol === "anthropic-messages" && !config.cliMode) {
+      const streamResult = await readAnthropicStream(response, requestStartedAt);
+      if (!streamResult.valid) {
+        return {
+          id: config.id,
+          status: "failed",
+          latencyMs: Math.max(1, Date.now() - requestStartedAt),
+          pingLatencyMs,
+          checkedAt,
+          message: "Anthropic stream did not contain any valid content chunks.",
         };
       }
 
