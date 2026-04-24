@@ -228,6 +228,31 @@ function getResponseText(body: unknown, protocol: RequestProtocol): string {
   return "";
 }
 
+function isGeminiPartValid(part: unknown): boolean {
+  if (!part || typeof part !== "object" || Array.isArray(part)) {
+    return false;
+  }
+
+  const row = part as Record<string, unknown>;
+  if (typeof row.text === "string" && row.text.trim().length > 0) {
+    return true;
+  }
+
+  if (row.inlineData && typeof row.inlineData === "object") {
+    return true;
+  }
+
+  if (row.fileData && typeof row.fileData === "object") {
+    return true;
+  }
+
+  if (row.functionCall && typeof row.functionCall === "object") {
+    return true;
+  }
+
+  return Object.keys(row).length > 0;
+}
+
 function isGeminiResponseValid(body: unknown): boolean {
   if (!body || typeof body !== "object") {
     return false;
@@ -249,7 +274,7 @@ function isGeminiResponseValid(body: unknown): boolean {
   }
 
   const parts = (content as Record<string, unknown>).parts;
-  return Array.isArray(parts) && parts.length > 0;
+  return Array.isArray(parts) && parts.some((part) => isGeminiPartValid(part));
 }
 
 function isOpenAIResponseValid(text: string, protocol: RequestProtocol): boolean {
